@@ -5,7 +5,8 @@ from gymnasium.envs.toy_text.frozen_lake import generate_random_map  # type: ign
 
 from typing import cast
 from collections import defaultdict
-
+import imageio
+import numpy as np
 import time
 N = 8
 # env: Env[Discrete, Discrete] = gym.make('FrozenLake-v1',  # type: ignore
@@ -21,6 +22,7 @@ def depth_first_branch_and_bound(env: Env[Discrete, Discrete], x: int) -> float:
     distance[x] = 0
 
     u = float('inf')
+    frames = [env.render()]  # Store frames for GIF (capture initial state)
 
     while stack:
         x = stack.pop()
@@ -30,16 +32,29 @@ def depth_first_branch_and_bound(env: Env[Discrete, Discrete], x: int) -> float:
             for _, y, _, _ in transitions:  # type: ignore
                 if distance[x] + 1 < u and distance[y] > distance[x] + 1 and x != y:
                     distance[y] = distance[x] + 1
+                    
+                    # Step through the environment to update state
+                    env.step(action)  
+                    frames.append(env.render())  # Capture frame after moving
+
                     if y == N**2-1:
                         u = min(u, distance[y])
                     else:
                         stack.append(y)  # type: ignore
-    return u
+    return u, frames
 
 
+# Reset environment
 x, _ = env.reset()
 print("Starting from state:", x)
+
+# Run Algorithm and Capture Frames
 start = time.time()
-u = depth_first_branch_and_bound(env, cast(int, x))
+u, frames = depth_first_branch_and_bound(env, cast(int, x))
 print("Time taken:", time.time() - start)
 print("Distance to goal:", u)
+
+# Save GIF
+imageio.mimsave("frozen_lake_dfbnb.gif", frames, duration=0.3)
+
+print("GIF saved as frozen_lake_dfbnb.gif")
