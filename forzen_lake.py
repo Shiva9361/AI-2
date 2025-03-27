@@ -1,60 +1,83 @@
 import gymnasium as gym
 from gymnasium import Env
 from gymnasium.spaces import Discrete
-from gymnasium.envs.toy_text.frozen_lake import generate_random_map  # type: ignore
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
-from typing import cast
+from typing import cast, Tuple
 from collections import defaultdict
+
 import imageio
-import numpy as np
+from func_timeout import func_set_timeout
+from func_timeout.exceptions import FunctionTimedOut
+
 import time
+import matplotlib.pyplot as plt
+
 N = 8
-# env: Env[Discrete, Discrete] = gym.make('FrozenLake-v1',  # type: ignore
-#                                         desc=generate_random_map(N), is_slippery=False, render_mode="rgb_array")
-env: Env[Discrete, Discrete] = gym.make('FrozenLake-v1',  # type: ignore
-                                        desc=None, map_name="8x8", is_slippery=False, render_mode="rgb_array")
+Timeout = 10  # in seconds :)
+
+env: Env[Discrete, Discrete] = gym.make('FrozenLake-v1',
+                                        desc=generate_random_map(N), is_slippery=False, render_mode="rgb_array")
+# desc=None, map_name="8x8", is_slippery=False, render_mode="rgb_array")
 
 
-def depth_first_branch_and_bound(env: Env[Discrete, Discrete], x: int) -> float:
-    stack: list[int] = [x]
+@func_set_timeout(Timeout)
+def depth_first_branch_and_bound(env: Env[Discrete, Discrete], x: int) -> Tuple[float, list[int]]:
+    stack: list[Tuple[int, list[int]]] = [(x, [])]
 
     distance: defaultdict[int, float] = defaultdict(lambda: float('inf'))
     distance[x] = 0
 
     u = float('inf')
-    frames = [env.render()]  # Store frames for GIF (capture initial state)
+
+    moves: list[int] = []
 
     while stack:
-        x = stack.pop()
-        for action in range(cast(int, env.action_space.n)):  # type: ignore
-            transitions = env.unwrapped.P[x][action]  # type: ignore
+        x, path = stack.pop()
+        for action in range(cast(int, env.action_space.n)):
+            transitions = env.unwrapped.P[x][action]
 
-            for _, y, _, _ in transitions:  # type: ignore
+            for _, y, _, _ in transitions:
                 if distance[x] + 1 < u and distance[y] > distance[x] + 1 and x != y:
                     distance[y] = distance[x] + 1
-                    
-                    # Step through the environment to update state
-                    env.step(action)  
-                    frames.append(env.render())  # Capture frame after moving
 
                     if y == N**2-1:
-                        u = min(u, distance[y])
+                        if (u > distance[y]):
+                            u = distance[y]
+                            moves = path + [action]
                     else:
-                        stack.append(y)  # type: ignore
-    return u, frames
+                        stack.append((y, path + [action]))
+    return u, moves
 
 
-# Reset environment
-x, _ = env.reset()
-print("Starting from state:", x)
+moves: list[int] = []
+times: list[float] = []
+for _ in range(5):
+    x, _ = env.reset()
+    print("Starting from state:", x)
+    start = time.time()
+    try:
+        u, moves = depth_first_branch_and_bound(env, cast(int, x))
+    except FunctionTimedOut:
+        print("Timed out...")
+        continue
+    stop = time.time()
+    times.append(stop - start)
+    print("Time taken:", times[-1])
+    print("Distance to goal:", u)
 
-# Run Algorithm and Capture Frames
-start = time.time()
-u, frames = depth_first_branch_and_bound(env, cast(int, x))
-print("Time taken:", time.time() - start)
-print("Distance to goal:", u)
+plt.plot(times)
+plt.xlabel('Run')
+plt.ylabel('Time taken (s)')
+plt.title(f"Depth First Branch and Bound on Frozen Lake {N}x{N}")
+plt.savefig(f'frozen_lake_dfbnb_{N}x{N}.png')
 
-# Save GIF
-imageio.mimsave("frozen_lake_dfbnb.gif", frames, duration=0.3)
+env.reset()
+frames: list = [env.render()]
+for action in moves:
+    _ = env.step(cast(Discrete, action))
+    frames.append(env.render())
+
+imageio.mimsave(f"frozen_lake_dfbnb_{N}x{N}.gif", frames, duration=0.3)
 
 print("GIF saved as frozen_lake_dfbnb.gif")
