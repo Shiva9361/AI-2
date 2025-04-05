@@ -108,17 +108,17 @@ def calculate_route_distance(env: TSPEnv, route: list[int]) -> float:
 
 
 @func_set_timeout(TIMEOUT)
-def hill_climbing(env: TSPEnv, max_iter: int = 1000, stagnation: int = 50, save: bool = False) -> Tuple[list[int], float]:
+def hill_climbing(env: TSPEnv, iter_no:int = 1, max_iter: int = 1000, stagnation: int = 50, save: bool = False) -> Tuple[list[int], float]:
     """
     Hill climbing algorithm for solving the TSP problem.
     Args:
         env (TSPEnv): The TSP environment.
+        iter_no (int) : Which Iteration it is , Defaults to 1
         max_iter (int, optional): Maximum iterations. Defaults to 1000.
         stagnation (int, optional): Stagnation threshold. Defaults to 50.
     Returns:
         Tuple[list[int], float]: The best route and its distance.
     """
-    env.reset()
     depot = int(env.depots[0][0])
 
     # initial solution (depot + random permutation)
@@ -151,12 +151,12 @@ def hill_climbing(env: TSPEnv, max_iter: int = 1000, stagnation: int = 50, save:
             break
 
     if (save):
-        imageio.mimsave('tsp_hillclimb.gif', frames, fps=3)
+        imageio.mimsave(f'tsp_hillclimb_{iter_no}.gif', frames, fps=3)
 
     return best_route, best_dist
 
 
-def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tuple[list[int], float]]) -> None:
+def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tuple[list[int], float]], save:bool=False) -> None:
     """
     Evaluate the algorithm on the TSP environment.
     Args:
@@ -165,12 +165,13 @@ def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tupl
     Returns:
         None
     """
+    env.reset()
     times = []
     for i in range(5):
-
+        np.random.seed(i)  # <--- Add this line
         try:
             start = time.time()
-            optimal_route, distance = algorithm(env)
+            optimal_route, distance = algorithm(env,iter_no=i,save=save)
             end = time.time()
             times.append(end - start)
             print(f"Execution time: {end - start:.2f} seconds")
@@ -189,6 +190,6 @@ def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tupl
 
 if __name__ == "__main__":
     env = TSPEnv(num_nodes=NODES)
-    evaluate_algorithm(env, hill_climbing)
+    evaluate_algorithm(env, hill_climbing,save=True)
     env.close()
     print("Execution completed.")
