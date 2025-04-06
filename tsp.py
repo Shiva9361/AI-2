@@ -9,6 +9,7 @@ from TSP.gym_vrp.envs import TSPEnv
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
+import math
 import imageio
 import matplotlib
 matplotlib.use('Agg')
@@ -16,6 +17,9 @@ matplotlib.use('Agg')
 
 TIMEOUT = 60*10  # 10 minutes timeout
 NODES = 20  # Number of nodes in the TSP problem
+
+times_hc: list[float] = []
+times_sa: list[float] = []
 
 UnsignedIntegerArray = NDArray[np.uint8 | np.uint16 | np.uint32 | np.uint64]
 
@@ -151,12 +155,65 @@ def hill_climbing(env: TSPEnv, iter_no:int = 1, max_iter: int = 1000, stagnation
             break
 
     if (save):
-        imageio.mimsave(f'tsp_hillclimb_{iter_no}.gif', frames, fps=3)
+        imageio.mimsave(f'results/tsp/tsp_hillclimb.gif', frames, fps=3)
+
+    return best_route, best_dist
+
+@func_set_timeout(TIMEOUT)
+def simulated_annealing(env: TSPEnv, iter_no:int = 1, max_iter: int = 1000, initial_temp: float=100.0, cooling_rate:float=0.995, save: bool = False) -> Tuple[list[int], float]:
+    """
+    Simulated Annealing algorithm for solving the TSP.
+    Args:
+        env (TSPEnv): The TSP environment.
+        iter_no (int,optional): Which Iteration it is , Defaults to 1
+        max_iter (int, optional): Maximum number of iterations. Defaults to 1000.
+        initial_temp (float, optional): Initial temperature. Defaults to 100.0.
+        cooling_rate (float, optional): Rate at which temperature decreases. Defaults to 0.995.
+        save (bool, optional): Whether to save the animation. Defaults to False.
+
+    Returns:
+        Tuple[list[int], float]: Best route and its distance.
+    """
+    depot = int(env.depots[0][0])
+
+    # Initialize current solution
+    nodes = list(range(env.num_nodes))
+    nodes.remove(depot)
+    current_route = [depot] + np.random.permutation(nodes).tolist()
+    current_dist = calculate_route_distance(env, current_route)
+
+    best_route, best_dist = current_route, current_dist
+    temperature = initial_temp
+    frames = []
+
+    for _ in range(max_iter):
+
+        neighbor = generate_neighbor(current_route)
+        neighbor_dist = calculate_route_distance(env, neighbor)
+
+        delta = neighbor_dist - current_dist
+
+
+        # If better solution OR with some probability
+        if delta < 0 or np.random.rand() < math.exp(-delta / temperature):
+            current_route, current_dist = neighbor, neighbor_dist
+
+            if current_dist < best_dist:
+                best_route, best_dist = current_route, current_dist
+                if save:
+                    frames.append(visualize_route(env, best_route))
+
+        temperature *= cooling_rate
+        if temperature < 1e-5:
+            break
+
+    if save:
+        imageio.mimsave(f'results/tsp/tsp_simulated_annealing.gif', frames, fps=3)
 
     return best_route, best_dist
 
 
-def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tuple[list[int], float]], save:bool=False) -> None:
+def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int, int, bool], Tuple[list[int], float]], save:bool=False) -> None:
     """
     Evaluate the algorithm on the TSP environment.
     Args:
@@ -165,10 +222,10 @@ def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tupl
     Returns:
         None
     """
-    env.reset()
+    global times_hc,times_sa
     times = []
     for i in range(5):
-        np.random.seed(i)  # <--- Add this line
+        np.random.seed(i) 
         try:
             start = time.time()
             optimal_route, distance = algorithm(env,iter_no=i,save=save)
@@ -178,18 +235,49 @@ def evaluate_algorithm(env: TSPEnv, algorithm: Callable[[TSPEnv, int, int], Tupl
             print(f"Optimal route: {optimal_route}\nDistance: {distance:.2f}")
         except FunctionTimedOut:
             print(f"{algorithm.__name__} timed out!")
-        finally:
-            plt.plot(range(1, len(times)+1), times, marker='o')
-            plt.xlabel("Execution Index")
-            plt.ylabel("Execution Time (seconds)")
-            plt.title(f"{algorithm.__name__} Execution Time")
-            plt.grid()
-            plt.savefig(f"{algorithm.__name__}_execution_time.png")
-            plt.close()
 
+    # Store in appropriate list based on algorithm name
+    print(algorithm.__name__)
+    if algorithm.__name__ == "hill_climbing":
+        times_hc = times.copy()
+    else:
+        times_sa = times.copy()
+
+    plt.plot(range(1, len(times)+1),times, label=f'{algorithm.__name__}', marker='o')
+    plt.xlabel('Iterations')
+    plt.ylabel('Time taken (s)')
+    # Add average line
+    avg_time= sum(times) / len(times)
+    plt.axhline(y=avg_time, color='blue', linestyle='--', label=f'Avg time: {avg_time:.4f}s')
+
+    # Legend
+    plt.legend()
+    plt.title(f"Time of {algorithm.__name__} on TSP {NODES} nodes")
+    plt.savefig(f'results/tsp/{algorithm.__name__}_on_tsp_{NODES}_nodes.png')
+    plt.clf()
+
+# Comparison plot
+def comparisonPlot():
+    plt.plot(range(1, len(times_hc)+1),times_hc, label=f'Hill Climbin Time', marker='o')
+    plt.plot(range(1, len(times_sa)+1),times_sa, label=f'SA Time', marker='o')
+    plt.xlabel('Iterations')
+    plt.ylabel('Time taken (s)')
+    # Add average line
+    avg_time_hc= sum(times_hc) / len(times_hc)
+    plt.axhline(y=avg_time_hc, color='blue', linestyle='--', label=f'Avg time hc: {avg_time_hc:.4f}s')
+    avg_time_sa = sum(times_sa) / len(times_sa)
+    plt.axhline(y=avg_time_sa, color='orange', linestyle='--', label=f'Avg time sa: {avg_time_sa:.4f}s')
+
+    # Legend
+    plt.legend()
+    plt.title(f"Time Comparison between on TSP {NODES} nodes")
+    plt.savefig(f'results/tsp/hc_vs_sa_on_tsp_{NODES}_nodes.png')
 
 if __name__ == "__main__":
     env = TSPEnv(num_nodes=NODES)
+    env.reset()
     evaluate_algorithm(env, hill_climbing,save=True)
+    evaluate_algorithm(env, simulated_annealing,save=True)
+    comparisonPlot()
     env.close()
     print("Execution completed.")
